@@ -1,6 +1,6 @@
 //---------------------------------------------------------------------------------------------------------------------
 // main.cpp
-// DHT11 weather webserver.
+// DHT11 weather node for firebase.
 // Style: Procedural
 //---------------------------------------------------------------------------------------------------------------------
 
@@ -10,6 +10,9 @@
 #include <Arduino.h>
 #include <DFRobot_DHT11.h>
 #include <ESP8266WiFi.h>
+#include <Firebase_ESP_Client.h>
+#include <addons/RTDBHelper.h>
+#include <addons/TokenHelper.h>
 
 //---------------------------------------------------------------------------------------------------------------------
 // Local Includes
@@ -39,6 +42,10 @@ float current_humidity = 0.0;
 uint32_t previous_millis = 0;
 bool time_to_gather = false;
 
+FirebaseData fbdo;
+FirebaseAuth auth;
+FirebaseConfig config;
+bool anon_sign_up = false;
 //---------------------------------------------------------------------------------------------------------------------
 // Functions Declaration
 //---------------------------------------------------------------------------------------------------------------------
@@ -76,6 +83,28 @@ void connect_wifi()
 }
 
 //---------------------------------------------------------------------------------------------------------------------
+void connect_firebase()
+{
+    config.api_key = Authentication::FB_WEB_API_KEY;
+    config.database_url = Authentication::FB_RTDB_URL;
+    // Anonymous access, sign up everytime.
+    if (Firebase.signUp(&config, &auth, "", ""))
+    {
+        Serial.println("ok");
+        anon_sign_up = true;
+    }
+    else
+    {
+        Serial.printf("%s\n", config.signer.signupError.message.c_str());
+    }
+
+    config.token_status_callback = tokenStatusCallback;
+
+    Firebase.begin(&config, &auth);
+    Firebase.reconnectWiFi(true);
+}
+
+//---------------------------------------------------------------------------------------------------------------------
 void setup()
 {
     Serial.begin(9600);
@@ -86,15 +115,60 @@ void setup()
     update_humidity();
 
     connect_wifi();
-
-    // Print ESP8266 Local IP Address
-    Serial.println(WiFi.localIP());
+    connect_firebase();
 }
 
 //---------------------------------------------------------------------------------------------------------------------
 void loop()
 {
     delay(STATE_DELAY_MS);
+    if (!anon_sign_up)
+    {
+        return;
+    }
+
+    static int count = 0;
+    static const uint32_t THIRTY_SECONDS = 30UL * 1000UL;
+    uint32_t current_millis = millis();
+
+    // A simple timer actually for a minute...
+    if (current_millis - previous_millis > THIRTY_SECONDS)
+    {
+        // Save the last time tick.
+        previous_millis = current_millis;
+
+        DHT.read(DHT11_PIN);
+        update_temperature();
+        update_humidity();
+
+        // push to firebase.
+        if (Firebase.ready())
+        {
+            if (Firebase.RTDB.setFloat(&fbdo, "test/temperature", current_temperature))
+            {
+                Serial.println("PASSED");
+                Serial.println("PATH: " + fbdo.dataPath());
+                Serial.println("TYPE: " + fbdo.dataType());
+            }
+            else
+            {
+                Serial.println("FAILED");
+                Serial.println("REASON: " + fbdo.errorReason());
+            }
+
+            if (Firebase.RTDB.setFloat(&fbdo, "test/humidity", current_humidity))
+            {
+                Serial.println("PASSED");
+                Serial.println("PATH: " + fbdo.dataPath());
+                Serial.println("TYPE: " + fbdo.dataType());
+            }
+            else
+            {
+                Serial.println("FAILED");
+                Serial.println("REASON: " + fbdo.errorReason());
+            }
+        }
+    }
 }
 
 //---------------------------------------------------------------------------------------------------------------------
