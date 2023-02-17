@@ -127,7 +127,6 @@ void loop()
         return;
     }
 
-    static int count = 0;
     static const uint32_t THIRTY_SECONDS = 30UL * 1000UL;
     uint32_t current_millis = millis();
 
