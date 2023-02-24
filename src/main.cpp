@@ -23,7 +23,7 @@
 // Defines
 //---------------------------------------------------------------------------------------------------------------------
 #define DHT11_PIN                                                                                                      \
-    14 // For ESP32 WEMOS D1 board, this is connected to the D15/SCL/D3 pin and
+    D5 // For ESP32 WEMOS D1 board, this is connected to the D15/SCL/D3 pin and
        // somehow it is called pin 5...
 // State Machine.
 #define STATE_DELAY_MS 50
@@ -87,18 +87,13 @@ void connect_firebase()
 {
     config.api_key = Authentication::FB_WEB_API_KEY;
     config.database_url = Authentication::FB_RTDB_URL;
-    // Anonymous access, sign up everytime.
-    if (Firebase.signUp(&config, &auth, "", ""))
-    {
-        Serial.println("ok");
-        anon_sign_up = true;
-    }
-    else
-    {
-        Serial.printf("%s\n", config.signer.signupError.message.c_str());
-    }
 
+    auth.user.email = Authentication::FB_EMAIL;
+    auth.user.password = Authentication::FB_PASS;
+
+    // Sign in.
     config.token_status_callback = tokenStatusCallback;
+    config.max_token_generation_retry = 5;
 
     Firebase.begin(&config, &auth);
     Firebase.reconnectWiFi(true);
@@ -122,16 +117,12 @@ void setup()
 void loop()
 {
     delay(STATE_DELAY_MS);
-    if (!anon_sign_up)
-    {
-        return;
-    }
 
     static const uint32_t THIRTY_SECONDS = 30UL * 1000UL;
     uint32_t current_millis = millis();
 
     // A simple timer actually for a minute...
-    if (current_millis - previous_millis > THIRTY_SECONDS)
+    if (current_millis - previous_millis > (2 * THIRTY_SECONDS))
     {
         // Save the last time tick.
         previous_millis = current_millis;
@@ -143,7 +134,7 @@ void loop()
         // push to firebase.
         if (Firebase.ready())
         {
-            if (Firebase.RTDB.setFloat(&fbdo, "test/temperature", current_temperature))
+            if (Firebase.RTDB.setString(&fbdo, "device_1/temperature", String(current_temperature)))
             {
                 Serial.println("PASSED");
                 Serial.println("PATH: " + fbdo.dataPath());
@@ -155,7 +146,7 @@ void loop()
                 Serial.println("REASON: " + fbdo.errorReason());
             }
 
-            if (Firebase.RTDB.setFloat(&fbdo, "test/humidity", current_humidity))
+            if (Firebase.RTDB.setString(&fbdo, "device_1/humidity", String(current_humidity)))
             {
                 Serial.println("PASSED");
                 Serial.println("PATH: " + fbdo.dataPath());
